@@ -20,6 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.stereotype.Component;
+import org.springframework.util.CollectionUtils;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -42,7 +43,7 @@ public class BPARowMapper implements ResultSetExtractor<List<BPA>> {
 	@Override
 	public List<BPA> extractData(ResultSet rs) throws SQLException, DataAccessException {
 
-		Map<String, BPA> buildingMap = new LinkedHashMap<String, BPA>();
+		Map<String, BPA> buildingMap = new LinkedHashMap<>();
 
 		while (rs.next()) {
 			String id = rs.getString("bpa_id");
@@ -50,21 +51,14 @@ public class BPARowMapper implements ResultSetExtractor<List<BPA>> {
 			String approvalNo = rs.getString("approvalNo");
 			BPA currentbpa = buildingMap.get(id);
 			String tenantId = rs.getString("bpa_tenantId");
+
 			if (currentbpa == null) {
-				Long lastModifiedTime = rs.getLong("bpa_lastModifiedTime");
-				if (rs.wasNull()) {
-					lastModifiedTime = null;
-				}
+				String additionalDetailsStr = rs.getString("additionalDetails");
+				Object additionalDetails = new Gson()
+						.fromJson(additionalDetailsStr.equals("{}") || additionalDetailsStr.equals("null") ? null
+								: additionalDetailsStr, Object.class);
 
-				Object additionalDetails = new Gson().fromJson(rs.getString("additionalDetails").equals("{}")
-						|| rs.getString("additionalDetails").equals("null") ? null : rs.getString("additionalDetails"),
-						Object.class);
-
-				AuditDetails auditdetails = AuditDetails.builder().createdBy(rs.getString("bpa_createdBy"))
-						.createdTime(rs.getLong("bpa_createdTime")).lastModifiedBy(rs.getString("bpa_lastModifiedBy"))
-						.lastModifiedTime(lastModifiedTime).build();
-
-				currentbpa = BPA.builder().auditDetails(auditdetails).applicationNo(applicationNo)
+				currentbpa = BPA.builder().auditDetails(buildAuditDetails(rs)).applicationNo(applicationNo)
 						.status(rs.getString("status")).tenantId(tenantId).approvalNo(approvalNo)
 						.approvalDate(rs.getLong("approvalDate")).accountId(rs.getString("accountId"))
 						.landId(rs.getString("landId")).applicationDate(rs.getLong("applicationDate")).id(id)
@@ -73,11 +67,8 @@ public class BPARowMapper implements ResultSetExtractor<List<BPA>> {
 				buildingMap.put(id, currentbpa);
 			}
 			addChildrenToProperty(rs, currentbpa);
-
 		}
-
 		return new ArrayList<>(buildingMap.values());
-
 	}
 
 	/**
@@ -87,55 +78,99 @@ public class BPARowMapper implements ResultSetExtractor<List<BPA>> {
 	 * @param bpa
 	 * @throws SQLException
 	 */
-	@SuppressWarnings("unused")
 	private void addChildrenToProperty(ResultSet rs, BPA bpa) throws SQLException {
-
-		String tenantId = bpa.getTenantId();
-		AuditDetails auditdetails = AuditDetails.builder().createdBy(rs.getString("bpa_createdBy"))
-				.createdTime(rs.getLong("bpa_createdTime")).lastModifiedBy(rs.getString("bpa_lastModifiedBy"))
-				.lastModifiedTime(rs.getLong("bpa_lastModifiedTime")).build();
-
 		if (bpa == null) {
-			JsonNode additionalDetail = getAdditionalDetails(rs.getObject("additionaldetail"));
-			bpa.setAdditionalDetails(additionalDetail);
+			return;
 		}
 
+		addPlotInfo(rs, bpa);
+		addBuildingInfo(rs, bpa);
+		addDocuments(rs, bpa);
+	}
+
+	private AuditDetails buildAuditDetails(ResultSet rs) throws SQLException {
+		Long lastModifiedTime = rs.getLong("bpa_lastModifiedTime");
+		if (rs.wasNull()) {
+			lastModifiedTime = null;
+		}
+		return AuditDetails.builder().createdBy(rs.getString("bpa_createdBy"))
+				.createdTime(rs.getLong("bpa_createdTime")).lastModifiedBy(rs.getString("bpa_lastModifiedBy"))
+				.lastModifiedTime(lastModifiedTime).build();
+	}
+
+	private void addPlotInfo(ResultSet rs, BPA bpa) throws SQLException {
 		String plotId = rs.getString("bpa_plot_id");
-		JsonNode plotDetails = getAdditionalDetails(rs.getObject("bpa_plot_details"));
 		if (StringUtils.isNotBlank(plotId)) {
-			PlotInfo plotInfo = PlotInfo.builder().id(plotId).plotArea(rs.getDouble("bpa_plot_area"))
+			bpa.setPlotInfo(PlotInfo.builder().id(plotId).plotArea(rs.getDouble("bpa_plot_area"))
 					.plotNumber(rs.getString("bpa_plot_number")).khataNumber(rs.getString("bpa_khata_number"))
-					.additionalDetails(plotDetails).build();
-			bpa.setPlotInfo(plotInfo);
+					.additionalDetails(getAdditionalDetails(rs.getObject("bpa_plot_details"))).build());
+		}
+	}
+
+	private void addBuildingInfo(ResultSet rs, BPA bpa) throws SQLException {
+		String buildingId = rs.getString("bpa_building_id");
+		if (StringUtils.isBlank(buildingId)) {
+			return;
 		}
 
-		String buildingId = rs.getString("bpa_building_id");
-		JsonNode buildingDetails = getAdditionalDetails(rs.getObject("bpa_building_details"));
-		if (StringUtils.isNotBlank(plotId)) {
-			BuildingInfo buildingInfo = BuildingInfo.builder().id(buildingId)
+		BuildingInfo buildingInfo;
+		boolean isNotBuildingInfoExist = CollectionUtils.isEmpty(bpa.getBuildingInfos())
+				|| bpa.getBuildingInfos().stream().noneMatch(b -> b.getId().equals(buildingId));
+
+		if (isNotBuildingInfoExist) {
+			buildingInfo = BuildingInfo.builder().id(buildingId)
 					.totalBuiltupArea(rs.getDouble("bpa_total_builtup_area"))
 					.numberOfFloors(rs.getInt("bpa_building_num_floor"))
-					.buildingHeight(rs.getDouble("bpa_building_height")).additionalDetails(buildingDetails).build();
+					.buildingHeight(rs.getDouble("bpa_building_height"))
+					.additionalDetails(getAdditionalDetails(rs.getObject("bpa_building_details"))).build();
+
 			bpa.addBuildingInfoItem(buildingInfo);
 
-			String floorId = rs.getString("bpa_floor_id");
-			JsonNode floorDetails = getAdditionalDetails(rs.getObject("bpa_floor_details"));
-			if (StringUtils.isNotBlank(plotId)) {
-				FloorInfo floorInfo = FloorInfo.builder().id(floorId).floorName(rs.getString("bpa_floor_name"))
-						.level(rs.getInt("bpa_floor_level")).usage(rs.getString("bpa_floor_usage"))
-						.buildupArea(rs.getDouble("bpa_floor_buildup_area")).floorArea(rs.getDouble("bpa_floor_area"))
-						.carpetArea(rs.getDouble("bpa_floor_carpet_area")).additionalDetails(floorDetails).build();
-
-				buildingInfo.addFloorInfoItem(floorInfo);
-			}
+		} else {
+			buildingInfo = bpa.getBuildingInfos().stream().filter(bi -> bi.getId().equals(buildingId)).findAny()
+					.orElse(null);
 		}
 
-		String documentId = rs.getString("bpa_doc_id");
-		JsonNode docDetails = getAdditionalDetails(rs.getObject("doc_details"));
-		if (documentId != null) {
-			Document document = Document.builder().documentType(rs.getString("bpa_doc_documenttype"))
-					.fileStoreId(rs.getString("bpa_doc_filestore")).id(documentId).additionalDetails(docDetails)
-					.documentUid(rs.getString("documentUid")).build();
+		if (buildingInfo == null) {
+			return;
+		}
+		addFloorInfo(rs, buildingInfo);
+	}
+
+	private void addFloorInfo(ResultSet rs, BuildingInfo buildingInfo) throws SQLException {
+		String floorId = rs.getString("bpa_floor_id");
+		if (StringUtils.isBlank(floorId)) {
+			return;
+		}
+
+		FloorInfo floorInfo = FloorInfo.builder().id(floorId).floorName(rs.getString("bpa_floor_name"))
+				.level(rs.getInt("bpa_floor_level")).usage(rs.getString("bpa_floor_usage"))
+				.buildupArea(rs.getDouble("bpa_floor_buildup_area")).floorArea(rs.getDouble("bpa_floor_area"))
+				.carpetArea(rs.getDouble("bpa_floor_carpet_area"))
+				.additionalDetails(getAdditionalDetails(rs.getObject("bpa_floor_details"))).build();
+
+		boolean isNotFloorInfoExist = CollectionUtils.isEmpty(buildingInfo.getFloorInfos())
+				|| buildingInfo.getFloorInfos().stream().noneMatch(f -> f.getId().equals(floorId));
+
+		if (isNotFloorInfoExist) {
+			buildingInfo.addFloorInfoItem(floorInfo);
+		}
+	}
+
+	private void addDocuments(ResultSet rs, BPA bpa) throws SQLException {
+		final String docId = rs.getString("bpa_doc_id");
+		if (StringUtils.isBlank(docId)) {
+			return;
+		}
+
+		Document document = Document.builder().id(docId).documentType(rs.getString("bpa_doc_documenttype"))
+				.fileStoreId(rs.getString("bpa_doc_filestore")).documentUid(rs.getString("documentUid"))
+				.additionalDetails(getAdditionalDetails(rs.getObject("doc_details"))).build();
+
+		boolean isNotDocExist = CollectionUtils.isEmpty(bpa.getDocuments())
+				|| bpa.getDocuments().stream().noneMatch(f -> f.getId().equals(docId));
+
+		if (isNotDocExist) {
 			bpa.addDocumentsItem(document);
 		}
 	}
