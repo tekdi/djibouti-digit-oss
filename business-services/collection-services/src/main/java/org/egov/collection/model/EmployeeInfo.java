@@ -76,7 +76,7 @@ public class EmployeeInfo {
 	@Size(min=5, max=128)
 	private String emailId;
 
-	@Size(max=10)
+	@Size(max=12)
 	private String pan;
 
 	@Size(max=12)

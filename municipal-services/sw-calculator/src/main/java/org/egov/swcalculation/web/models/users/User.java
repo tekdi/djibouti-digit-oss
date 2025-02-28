@@ -71,7 +71,7 @@ public class User   {
         @JsonProperty("altContactNumber")
         private String altContactNumber;
 
-        @Size(max=10)
+        @Size(max=12)
         @JsonProperty("pan")
         private String pan;
 
