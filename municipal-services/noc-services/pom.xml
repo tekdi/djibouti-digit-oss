@@ -11,7 +11,7 @@
 		<java.version>1.8</java.version>
 		<maven.compiler.source>${java.version}</maven.compiler.source>
 		<maven.compiler.target>${java.version}</maven.compiler.target>
-		<lombok.version>1.18.8</lombok.version>
+		<lombok.version>1.18.22</lombok.version>
 		<springfox-version>2.7.0</springfox-version>
 		<logback.version>1.2.0</logback.version>
 	</properties>
@@ -114,7 +114,6 @@
 		<dependency>
       <groupId>org.flywaydb</groupId>
       <artifactId>flyway-core</artifactId>
-	  <version>6.4.3</version>
     </dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
