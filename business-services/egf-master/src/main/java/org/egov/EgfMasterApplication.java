@@ -97,11 +97,11 @@ public class EgfMasterApplication {
 		return client;
 	}
 	
-	@Bean
-    public FlywayMigrationStrategy cleanMigrateStrategy() {
-        return flyway -> {
-            flyway.repair();
-            flyway.migrate();
-        };
-    }
+//	@Bean
+//    public FlywayMigrationStrategy cleanMigrateStrategy() {
+//        return flyway -> {
+//            flyway.repair();
+//            flyway.migrate();
+//        };
+//    }
 }
